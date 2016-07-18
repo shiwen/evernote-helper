@@ -1,12 +1,21 @@
-package me.shiwen.evernote;
+package me.shiwen.evernote.utils;
 
-import org.w3c.dom.*;
+import org.w3c.dom.Document;
+import org.w3c.dom.DocumentType;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
+import org.w3c.dom.Text;
 import org.xml.sax.SAXException;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
-import javax.xml.transform.*;
+import javax.xml.transform.OutputKeys;
+import javax.xml.transform.Source;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerException;
+import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
 import javax.xml.transform.stream.StreamSource;
@@ -20,22 +29,21 @@ public class XmlUtils {
     private static final String LOAD_EXTERNAL_DTD = "http://apache.org/xml/features/nonvalidating/load-external-dtd";
     private static final String YES = "yes";
 
-    public static void main(String... args) throws ParserConfigurationException, IOException, SAXException,
-            TransformerException {
-        String s = "<!DOCTYPE en-note SYSTEM \"a.dtd\"><en-note><div><pre>  test1 \n    test10  <br " +
-                "/><br/></pre><p>inside_p<div><p><div><p><div><p><div>inside_p_div<br/></div></p></div></p></div></p" +
-                "></div></p>test3<br/>test4</div" +
-                "></en-note>";
-        Document document = getDocument(s);
-        transform(document);
-        System.out.println(format(document, false));
+    private static final DocumentBuilder DOCUMENT_BUILDER;
+
+    static {
+        try {
+            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            factory.setFeature(LOAD_EXTERNAL_DTD, false);
+            DOCUMENT_BUILDER = factory.newDocumentBuilder();
+        } catch (ParserConfigurationException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static Document getDocument(String s) throws ParserConfigurationException, IOException, SAXException {
-        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-        factory.setFeature(LOAD_EXTERNAL_DTD, false);
-        DocumentBuilder builder = factory.newDocumentBuilder();
-        return builder.parse(new ByteArrayInputStream(s.getBytes()));
+        DOCUMENT_BUILDER.reset();
+        return DOCUMENT_BUILDER.parse(new ByteArrayInputStream(s.getBytes()));
     }
 
     public static void transform(Document d) {
@@ -123,6 +131,11 @@ public class XmlUtils {
         transformer.setOutputProperty(OutputKeys.INDENT, YES);
         transformer.transform(source, new StreamResult(writer));
         return writer.toString();
+    }
+
+    public static String format(String xml, boolean indent) throws IOException, SAXException,
+            ParserConfigurationException, TransformerException {
+        return format(getDocument(xml), indent);
     }
 
     public static String format(Document document, boolean indent) throws TransformerException {
