@@ -14,13 +14,6 @@ package me.shiwen.evernote;
   http://dev.evernote.com/documentation/cloud/
  */
 
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.security.MessageDigest;
-import java.util.Iterator;
-import java.util.List;
-
 import com.evernote.auth.EvernoteAuth;
 import com.evernote.auth.EvernoteService;
 import com.evernote.clients.ClientFactory;
@@ -39,6 +32,13 @@ import com.evernote.edam.type.Resource;
 import com.evernote.edam.type.ResourceAttributes;
 import com.evernote.edam.type.Tag;
 import com.evernote.thrift.transport.TTransportException;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.security.MessageDigest;
+import java.util.Iterator;
+import java.util.List;
 
 public class EDAMDemo {
 

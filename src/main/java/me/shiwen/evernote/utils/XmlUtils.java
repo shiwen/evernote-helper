@@ -12,31 +12,32 @@ import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.transform.OutputKeys;
-import javax.xml.transform.Source;
 import javax.xml.transform.Transformer;
 import javax.xml.transform.TransformerException;
 import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
-import javax.xml.transform.stream.StreamSource;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.StringReader;
 import java.io.StringWriter;
 
 public class XmlUtils {
-    private static final String INDENT_NUMBER = "indent-number";
     private static final String LOAD_EXTERNAL_DTD = "http://apache.org/xml/features/nonvalidating/load-external-dtd";
+    private static final String INDENT_AMOUNT = "{http://xml.apache.org/xslt}indent-amount";
     private static final String YES = "yes";
 
     private static final DocumentBuilder DOCUMENT_BUILDER;
+    private static final Transformer TRANSFORMER;
 
     static {
         try {
             DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
             factory.setFeature(LOAD_EXTERNAL_DTD, false);
             DOCUMENT_BUILDER = factory.newDocumentBuilder();
-        } catch (ParserConfigurationException e) {
+
+            TransformerFactory transformerFactory = TransformerFactory.newInstance();
+            TRANSFORMER = transformerFactory.newTransformer();
+        } catch (Exception e) {
             throw new RuntimeException(e);
         }
     }
@@ -122,43 +123,31 @@ public class XmlUtils {
         return array;
     }
 
-    public static String prettyFormat(String xml) throws TransformerException {
-        Source source = new StreamSource(new StringReader(xml));
-        StringWriter writer = new StringWriter();
-        TransformerFactory tf = TransformerFactory.newInstance();
-        tf.setAttribute(INDENT_NUMBER, 2);
-        Transformer transformer = tf.newTransformer();
-        transformer.setOutputProperty(OutputKeys.INDENT, YES);
-        transformer.transform(source, new StreamResult(writer));
-        return writer.toString();
-    }
-
     public static String format(String xml, boolean indent) throws IOException, SAXException,
             ParserConfigurationException, TransformerException {
         return format(getDocument(xml), indent);
     }
 
     public static String format(Document document, boolean indent) throws TransformerException {
-        TransformerFactory tf = TransformerFactory.newInstance();
-        tf.setAttribute(INDENT_NUMBER, 2);
-        Transformer transformer = tf.newTransformer();
+        TRANSFORMER.reset();
         if (indent) {
-            transformer.setOutputProperty(OutputKeys.INDENT, YES);
+            TRANSFORMER.setOutputProperty(OutputKeys.INDENT, YES);
+            TRANSFORMER.setOutputProperty(INDENT_AMOUNT, Integer.toString(2));
         }
-        transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, YES);
+        TRANSFORMER.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, YES);
         DocumentType documentType = document.getDoctype();
         if (documentType != null) {
             String publicId = documentType.getPublicId();
             if (publicId != null) {
-                transformer.setOutputProperty(OutputKeys.DOCTYPE_PUBLIC, publicId);
+                TRANSFORMER.setOutputProperty(OutputKeys.DOCTYPE_PUBLIC, publicId);
             }
             String systemId = documentType.getSystemId();
             if (systemId != null) {
-                transformer.setOutputProperty(OutputKeys.DOCTYPE_SYSTEM, systemId);
+                TRANSFORMER.setOutputProperty(OutputKeys.DOCTYPE_SYSTEM, systemId);
             }
         }
         StringWriter writer = new StringWriter();
-        transformer.transform(new DOMSource(document), new StreamResult(writer));
+        TRANSFORMER.transform(new DOMSource(document), new StreamResult(writer));
         String result = writer.toString();
         if (!indent) {
             result = result.replaceAll(">\\s+<", "><");

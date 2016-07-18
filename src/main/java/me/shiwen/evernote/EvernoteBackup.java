@@ -6,17 +6,13 @@ import com.evernote.clients.ClientFactory;
 import com.evernote.clients.NoteStoreClient;
 import com.evernote.clients.UserStoreClient;
 import com.evernote.edam.error.EDAMErrorCode;
-import com.evernote.edam.error.EDAMNotFoundException;
 import com.evernote.edam.error.EDAMSystemException;
-import com.evernote.edam.error.EDAMUserException;
 import com.evernote.edam.notestore.NoteFilter;
 import com.evernote.edam.notestore.NoteList;
 import com.evernote.edam.type.Note;
-import com.evernote.edam.type.NoteAttributes;
 import com.evernote.edam.type.NoteSortOrder;
 import com.evernote.edam.type.Notebook;
 import com.evernote.edam.type.Tag;
-import com.evernote.thrift.TException;
 import me.shiwen.evernote.error.EvernoteBackupException;
 import me.shiwen.evernote.model.LocalNote;
 import me.shiwen.evernote.utils.XmlUtils;
@@ -36,33 +32,31 @@ import static com.evernote.edam.userstore.Constants.EDAM_VERSION_MAJOR;
 import static com.evernote.edam.userstore.Constants.EDAM_VERSION_MINOR;
 
 public class EvernoteBackup {
+    private static final int BATCH_MAX_SIZE = 50;
+
+    private ClientFactory factory;
     private NoteStoreClient noteStore;
+    private boolean initialized = false;
     private Map<String, String> notebookNameMap = new HashMap<>();
     private Map<String, String> tagNameMap = new HashMap<>();
-    private int pulled = 0;
 
     public EvernoteBackup(String token) throws EvernoteBackupException {
         try {
-            EvernoteAuth evernoteAuth = new EvernoteAuth(EvernoteService.SANDBOX, token);
-            ClientFactory factory = new ClientFactory(evernoteAuth);
+            factory = new ClientFactory(new EvernoteAuth(EvernoteService.YINXIANG, token));
             UserStoreClient userStore = factory.createUserStoreClient();
             if (!userStore.checkVersion("", EDAM_VERSION_MAJOR, EDAM_VERSION_MINOR)) {
                 throw new EvernoteBackupException("Incompatible Evernote client protocol version");
             }
-            noteStore = factory.createNoteStoreClient();
-
-            List<Notebook> notebooks = noteStore.listNotebooks();
-            for (Notebook notebook : notebooks) {
-                notebookNameMap.put(notebook.getGuid(), notebook.getName());
-            }
-
-            List<Tag> tags = noteStore.listTags();
-            for (Tag tag : tags) {
-                tagNameMap.put(tag.getGuid(), tag.getName());
-            }
+        } catch (EvernoteBackupException e) {
+            throw e;
         } catch (Exception e) {
             throw new EvernoteBackupException(e);
         }
+    }
+
+    public static void main(String... args) throws EvernoteBackupException {
+        EvernoteBackup e = new EvernoteBackup("");
+        e.pullNotes();
     }
 
     public void removeUnusedTags() {
@@ -76,66 +70,44 @@ public class EvernoteBackup {
         // System.out.println("total: " + sum);
     }
 
-    public void pullNotes() throws EvernoteBackupException {
-        try {
-            NoteFilter filter = new NoteFilter();
-            filter.setOrder(NoteSortOrder.CREATED.getValue());
-            filter.setAscending(false);
-            boolean hasMoreNotes;
-            do {
-                try {
-                    hasMoreNotes = progressivelyPullNotes(filter);
-                } catch (EDAMSystemException e) {
-                    int pauseSeconds = e.getRateLimitDuration();
-                    System.err.println("pause for " + pauseSeconds + " seconds");
-                    Thread.sleep(pauseSeconds * 1000L);
-                    hasMoreNotes = true;
+    private void init() throws EvernoteBackupException {
+        boolean noteStoreInitialized = false;
+        boolean notebookNameMapInitialized = false;
+        while (!initialized) {
+            try {
+                if (!noteStoreInitialized) {
+                    noteStore = factory.createNoteStoreClient();
+                    noteStoreInitialized = true;
                 }
-            } while (hasMoreNotes);
-        } catch (Exception e) {
-            throw new EvernoteBackupException(e);
+
+                if (!notebookNameMapInitialized) {
+                    List<Notebook> notebooks = noteStore.listNotebooks();
+                    for (Notebook notebook : notebooks) {
+                        notebookNameMap.put(notebook.getGuid(), notebook.getName());
+                    }
+                    notebookNameMapInitialized = true;
+                }
+
+                List<Tag> tags = noteStore.listTags();
+                for (Tag tag : tags) {
+                    tagNameMap.put(tag.getGuid(), tag.getName());
+                }
+
+                initialized = true;
+            } catch (EDAMSystemException e) {
+                processException(e);
+            } catch (Exception e) {
+                throw new EvernoteBackupException(e);
+            }
         }
     }
 
-    private boolean progressivelyPullNotes(NoteFilter filter) throws EDAMSystemException, EvernoteBackupException {
-        try {
-            NoteList noteList = noteStore.findNotes(filter, pulled, 50);
-            int totalNotes = noteList.getTotalNotes();
-            List<Note> notes = noteList.getNotes();
-
-            for (Note note : notes) {
-                NoteAttributes attributes = note.getAttributes();
-                Note fullNote = noteStore.getNote(note.getGuid(), true, true, false, false);  // TODO resources
-
-                LocalNote localNote = new LocalNote();
-                localNote.title = note.getTitle();
-                localNote.created = new Date(note.getCreated());
-                localNote.updated = new Date(note.getUpdated());
-                localNote.notebook = notebookNameMap.get(note.getNotebookGuid());
-                localNote.reference = attributes.getSourceURL();
-                localNote.content = XmlUtils.format(fullNote.getContent(), true).replaceAll("\r", "").trim();
-
-                List<String> tagGuids = note.getTagGuids();
-                if (tagGuids != null) {
-                    List<String> tagNames = new ArrayList<>();
-                    for (String tagGuid : tagGuids) {
-                        tagNames.add(tagNameMap.get(tagGuid));
-                    }
-                    localNote.tags = tagNames.toArray(new String[0]);
-                }
-                pulled++;
-                System.out.println("pull note " + pulled + ": " + note.getGuid());
-            }
-            return pulled < totalNotes;
-        } catch (EDAMSystemException e) {
-            if (e.getErrorCode() == EDAMErrorCode.RATE_LIMIT_REACHED) {
-                throw e;
-            } else {
-                throw new EvernoteBackupException(e);
-            }
-        } catch (Exception e) {
-            throw new EvernoteBackupException(e);
+    private String hexString(byte[] bytes) {
+        StringBuilder sb = new StringBuilder();
+        for (byte b : bytes) {
+            sb.append(String.format("%02x", b & 0xff));
         }
+        return sb.toString();
     }
 
     private Path getPath(String guid) {
@@ -151,12 +123,12 @@ public class EvernoteBackup {
         }
     }
 
-    //    private boolean contentUpdated(Note note, LocalNote localNote) {
-    //        String contentHash = new String(note.getContentHash());
-    //        return !contentHash.equals(localNote.hash);
-    //    }
+    private void saveToFile(String guid, LocalNote localNote) throws IOException {
+        Path path = getPath(guid);
+        Files.write(path, YamlUtils.dump(localNote).getBytes());
+    }
 
-    private void updateNote(Note note, String oldContentHash) throws EvernoteBackupException {
+    private void saveNote(Note note) throws EDAMSystemException, EvernoteBackupException {
         try {
             LocalNote localNote = new LocalNote();
             localNote.title = note.getTitle();
@@ -176,25 +148,70 @@ public class EvernoteBackup {
                 localNote.tags = tagNames.toArray(new String[0]);
             }
 
-            if (!localNote.hash.equals(oldContentHash)) {
-                Note fullNote = noteStore.getNote(note.getGuid(), true, true, false, false);  // TODO resources
+            String guid = note.getGuid();
+            LocalNote oldNote = loadFromFile(guid);
+            if (oldNote == null || oldNote.content == null || !localNote.hash.equals(oldNote.hash)) {
+                Note fullNote = noteStore.getNote(guid, true, true, false, false);  // TODO resources
                 localNote.content = XmlUtils.format(fullNote.getContent(), true).replaceAll("\r", "").trim();
+                System.err.println(fullNote.getContent());
             }
+
+            saveToFile(guid, localNote);
+        } catch (EDAMSystemException e) {
+            throw e;
         } catch (Exception e) {
             throw new EvernoteBackupException(e);
         }
     }
 
-    public void storeNotes(String guid, LocalNote localNote) throws IOException {
-        Path path = getPath(guid);
-        Files.write(path, YamlUtils.dump(localNote).getBytes());
+    private void processException(EDAMSystemException e) throws EvernoteBackupException {
+        if (e.getErrorCode() == EDAMErrorCode.RATE_LIMIT_REACHED) {
+            int pauseSeconds = e.getRateLimitDuration();
+            System.err.println("pause for " + pauseSeconds + " seconds");
+            try {
+                Thread.sleep(pauseSeconds * 1000L);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            }
+        } else {
+            throw new EvernoteBackupException(e);
+        }
     }
 
-    private String hexString(byte[] bytes) {
-        StringBuilder sb = new StringBuilder();
-        for (byte b : bytes) {
-            sb.append(String.format("%02x", b & 0xff));
+    public void pullNotes() throws EvernoteBackupException {
+        try {
+            if (!initialized) {
+                init();
+            }
+
+            NoteFilter filter = new NoteFilter();
+            filter.setOrder(NoteSortOrder.CREATED.getValue());
+            filter.setAscending(true);
+
+            int offset = 0;
+            boolean hasMoreNotes;
+            do {
+                try {
+                    NoteList noteList = noteStore.findNotes(filter, offset, BATCH_MAX_SIZE);
+                    List<Note> notes = noteList.getNotes();
+                    if (notes == null) {
+                        break;
+                    }
+                    for (Note note : notes) {
+                        saveNote(note);
+                        offset++;
+                        System.out.println("note " + offset + ": " + note.getGuid());
+                    }
+                    hasMoreNotes = offset < noteList.getTotalNotes();
+                } catch (EDAMSystemException e) {
+                    processException(e);
+                    hasMoreNotes = true;
+                }
+            } while (hasMoreNotes);
+        } catch (EvernoteBackupException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new EvernoteBackupException(e);
         }
-        return sb.toString();
     }
 }
