@@ -151,9 +151,18 @@ public class EvernoteBackup {
             String guid = note.getGuid();
             LocalNote oldNote = loadFromFile(guid);
             if (oldNote == null || oldNote.content == null || !localNote.hash.equals(oldNote.hash)) {
+                System.out.println("oldNote == null : " + (oldNote == null));
+                if (oldNote != null) {
+                    System.out.println("oldNote.content == null : " + (oldNote.content == null));
+                    System.out.println("equals hash : " + localNote.hash.equals(oldNote.hash));
+                }
+
                 Note fullNote = noteStore.getNote(guid, true, true, false, false);  // TODO resources
                 localNote.content = XmlUtils.format(fullNote.getContent(), true).replaceAll("\r", "").trim();
-                System.err.println(fullNote.getContent());
+                System.out.println("full content length : " + fullNote.getContent().length());
+                System.out.println(localNote.content);
+                System.out.println(localNote.created);
+                System.out.println("------");
             }
 
             saveToFile(guid, localNote);
@@ -172,6 +181,7 @@ public class EvernoteBackup {
                 Thread.sleep(pauseSeconds * 1000L);
             } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
+                throw new RuntimeException(ex);
             }
         } else {
             throw new EvernoteBackupException(e);
