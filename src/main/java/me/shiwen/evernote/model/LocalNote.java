@@ -5,10 +5,12 @@ import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
 import java.util.Date;
 
-@JsonPropertyOrder({"title", "created", "updated", "version", "hash", "reference", "notebook", "tags", "content"})
+@JsonPropertyOrder({"title", "notebook", "created", "updated", "version", "hash", "reference", "tags", "content"})
 public class LocalNote {
     @JsonProperty("title")
     public String title;
+    @JsonProperty("notebook")
+    public String notebook;
     @JsonProperty("created")
     public Date created;
     @JsonProperty("updated")
@@ -19,8 +21,6 @@ public class LocalNote {
     public String hash;
     @JsonProperty("reference")
     public String reference;
-    @JsonProperty("notebook")
-    public String notebook;
     @JsonProperty("tags")
     public String[] tags;
     @JsonProperty("content")

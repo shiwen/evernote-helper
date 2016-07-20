@@ -44,14 +44,13 @@ public class XmlUtils {
 
     public static Document getDocument(String s) throws ParserConfigurationException, IOException, SAXException {
         DOCUMENT_BUILDER.reset();
-        return DOCUMENT_BUILDER.parse(new ByteArrayInputStream(s.getBytes()));
+        Document document = DOCUMENT_BUILDER.parse(new ByteArrayInputStream(s.getBytes()));
+        document.normalize();
+        return document;
     }
 
     public static void transform(Document d) {
         for (Node node : getNodeArray(d.getElementsByTagName("div"))) {
-            flatten(node);
-        }
-        for (Node node : getNodeArray(d.getElementsByTagName("p"))) {
             flatten(node);
         }
     }
@@ -61,57 +60,38 @@ public class XmlUtils {
         Document doc = node.getOwnerDocument();
         if (node.hasChildNodes()) {
             Node[] children = getNodeArray(node.getChildNodes());
-            StringBuilder sb = new StringBuilder();
+            boolean keepBr = true;
             for (Node child : children) {
                 if (child.getNodeType() == Node.TEXT_NODE) {
-                    if (sb.length() != 0) {
-                        sb.append(" ");
-                    }
-                    sb.append(child.getTextContent());
-                    node.removeChild(child);
+                    insertNewNode(doc, parentNode, node, child);
+                    keepBr = false;
                 } else if (child.getNodeType() == Node.ELEMENT_NODE) {
                     switch (child.getNodeName()) {
                         case "br":
-                            if (sb.length() != 0) {
-                                insertNewNode(doc, parentNode, node, sb);
-                                node.removeChild(child);
-                            } else {
+                            if (keepBr) {
                                 insertNewNode(doc, parentNode, node, child);
+                            } else {
+                                node.removeChild(child);
                             }
                             break;
                         case "div":
                         case "p":
                         case "pre":
                         case "blockquote":
-                            if (sb.length() != 0) {
-                                insertNewNode(doc, parentNode, node, sb);
-                            }
                             parentNode.insertBefore(child, node);
                             break;
+                        default:
+                            insertNewNode(doc, parentNode, node, child);
+                            break;
                     }
+                    keepBr = true;
+                } else {
+                    insertNewNode(doc, parentNode, node, child);
+                    keepBr = true;
                 }
             }
-            if (sb.length() != 0) {
-                insertNewNode(doc, parentNode, node, sb);
-            }
-            if (!node.hasChildNodes()) {
-                parentNode.removeChild(node);
-            }
+            parentNode.removeChild(node);
         }
-    }
-
-    private static void insertNewNode(Document doc, Node parentNode, Node node, StringBuilder sb) {
-        Text text = doc.createTextNode(sb.toString().replaceAll("\\s{2,}", " "));
-        sb.setLength(0);
-        Element newNode = doc.createElement(node.getNodeName());
-        newNode.appendChild(text);
-        parentNode.insertBefore(newNode, node);
-    }
-
-    private static void insertNewNode(Document doc, Node parentNode, Node node, Node br) {
-        Element newNode = doc.createElement(node.getNodeName());
-        newNode.appendChild(br);
-        parentNode.insertBefore(newNode, node);
     }
 
     private static Node[] getNodeArray(NodeList nodeList) {
@@ -121,6 +101,12 @@ public class XmlUtils {
             array[i] = nodeList.item(i);
         }
         return array;
+    }
+
+    private static void insertNewNode(Document doc, Node parentNode, Node node, Node child) {
+        Element newNode = doc.createElement(node.getNodeName());
+        newNode.appendChild(child);
+        parentNode.insertBefore(newNode, node);
     }
 
     public static String format(String xml, boolean indent) throws IOException, SAXException,
