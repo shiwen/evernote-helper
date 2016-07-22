@@ -1,5 +1,6 @@
 package me.shiwen.evernote.utils;
 
+import com.sun.org.apache.xalan.internal.xsltc.compiler.util.NodeType;
 import org.w3c.dom.Document;
 import org.w3c.dom.DocumentType;
 import org.w3c.dom.Element;
@@ -20,6 +21,8 @@ import javax.xml.transform.stream.StreamResult;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.StringWriter;
+import java.util.ArrayList;
+import java.util.regex.Pattern;
 
 public class XmlUtils {
     private static final String LOAD_EXTERNAL_DTD = "http://apache.org/xml/features/nonvalidating/load-external-dtd";
@@ -46,12 +49,38 @@ public class XmlUtils {
         DOCUMENT_BUILDER.reset();
         Document document = DOCUMENT_BUILDER.parse(new ByteArrayInputStream(s.getBytes()));
         document.normalize();
+
+//        compress(document);
+
         return document;
     }
 
     public static void transform(Document d) {
         for (Node node : getNodeArray(d.getElementsByTagName("div"))) {
             flatten(node);
+        }
+    }
+
+    public static void compress(Document d) {
+        Pattern pattern = Pattern.compile("\\s+");
+        ArrayList<Node> textNodes = new ArrayList<>();
+        getTextNodes(d, textNodes);
+        for (Node node : textNodes) {
+            if (pattern.matcher(node.getTextContent()).matches()) {
+                node.getParentNode().removeChild(node);
+            }
+        }
+    }
+
+    public static void getTextNodes(Node node, ArrayList<Node> nodeList) {
+        NodeList children = node.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            Node child = children.item(i);
+            if (child.getNodeType() == Node.TEXT_NODE) {
+                nodeList.add(child);
+            } else {
+                getTextNodes(child, nodeList);
+            }
         }
     }
 

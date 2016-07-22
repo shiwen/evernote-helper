@@ -17,16 +17,36 @@ import me.shiwen.evernote.error.EvernoteBackupException;
 import me.shiwen.evernote.model.LocalNote;
 import me.shiwen.evernote.utils.XmlUtils;
 import me.shiwen.evernote.utils.YamlUtils;
+import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.api.errors.GitAPIException;
+import org.eclipse.jgit.lib.Repository;
+import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
+import org.w3c.dom.Document;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
+import org.xml.sax.SAXException;
 
+import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.transform.TransformerException;
+import java.io.BufferedWriter;
+import java.io.File;
 import java.io.IOException;
+import java.lang.Character.UnicodeBlock;
+import java.lang.Character.UnicodeScript;
+import java.nio.charset.Charset;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static com.evernote.edam.userstore.Constants.EDAM_VERSION_MAJOR;
 import static com.evernote.edam.userstore.Constants.EDAM_VERSION_MINOR;
@@ -148,9 +168,16 @@ public class EvernoteBackup {
                 Note fullNote = noteStore.getNote(guid, true, true, false, false);  // TODO resources
                 localNote.content = XmlUtils.format(fullNote.getContent().replaceAll(">\\s+<", "><"), true)
                         .replace("\r", "").trim();
+
+                Files.write(Paths.get("debug_content", guid), ("###" + fullNote.getContent() + "###").getBytes());
+                if (fullNote.getContent().contains("\r")) {
+                    Files.write(Paths.get("debug_content_r", guid), ("###" + fullNote.getContent() + "###").getBytes());
+                }
             } else {
                 localNote.content = oldNote.content;
             }
+
+            System.out.println(localNote.created);
 
             saveToFile(guid, localNote);
         } catch (EDAMSystemException e) {
@@ -198,15 +225,81 @@ public class EvernoteBackup {
     }
 
     private Path getPath(String guid) {
-        return Paths.get("notes2", guid);
+        return Paths.get("notes", guid);
     }
 
     public void removeUnusedTags() {
         // TODO implement this
     }
 
-    public static void main(String... args) throws EvernoteBackupException {
-        EvernoteBackup e = new EvernoteBackup("");
-        e.pullNotes();
+    public static void main(String... args) throws EvernoteBackupException, IOException, GitAPIException, TransformerException, SAXException, ParserConfigurationException {
+
+        //        EvernoteBackup e = new EvernoteBackup("");
+        //        e.pullNotes();
+
+        //        DirectoryStream<Path> stream = Files.newDirectoryStream(Paths.get("notes"));
+        //        for (Path path : stream) {
+        //            if (Files.isDirectory(path)) {
+        //                continue;
+        //            }
+        //            String guid = path.getFileName().toString();
+        //            System.out.println(guid);
+        //            LocalNote note = YamlUtils.load(new String(Files.readAllBytes(path)));
+        //            String content = new String(Files.readAllBytes(Paths.get("debug_content", guid)));
+        //            content = content.substring(3, content.length() - 3);
+        //            content = content.replaceAll(">\\s+<", "><");
+        //            note.content = XmlUtils.format(content, true).trim();
+        //            Files.write(path, YamlUtils.dump(note).getBytes());
+        //        }
+        //        stream.close();
+
+        //        FileRepositoryBuilder repositoryBuilder = new FileRepositoryBuilder();
+        //        repositoryBuilder.setMustExist(true);
+        //        repositoryBuilder.setGitDir(new File("notes", ".git"));
+        //        Repository repository = repositoryBuilder.build();
+        //        Git git = new Git(repository);
+        //        git.add().addFilepattern(".").call();
+        //        git.commit().setMessage("The big bang!").call();
+
+        //        String content = new String(Files.readAllBytes(Paths.get("/home/shiwen/tt")));
+        //        Document document = XmlUtils.getDocument(content);
+        //        debug(document);
+
+        Pattern pattern = Pattern.compile("[^\\p{IsHan}\\p{L}\\p{Punct}\\p{L}\n" +
+                " \\p{Nd}\\p{Pc}\\p{InCJK_Symbols_and_Punctuation}\\p{InGeneral_Punctuation}\\s]");
+        //        Pattern pattern = Pattern.compile("\\p{Cf}");
+        DirectoryStream<Path> stream = Files.newDirectoryStream(Paths.get("debug_content"));
+        Set<Character> charSet = new HashSet<>();
+        for (Path path : stream) {
+            if (Files.isDirectory(path)) {
+                continue;
+            }
+            String guid = path.getFileName().toString();
+            System.out.println(guid);
+            String a = new String(Files.readAllBytes(path));
+            //        System.out.println(String.format("\\u%04x", (int)(a.charAt(0))));
+            Matcher m = pattern.matcher(a);
+            while (m.find()) {
+                charSet.add(m.group().charAt(0));
+            }
+        }
+        BufferedWriter writer = Files.newBufferedWriter(Paths.get("charset"), Charset.defaultCharset());
+        for (char c : charSet) {
+            writer.write("->" + c + "<- " + String.format("\\u%04x", (int)c) + "\n");
+        }
+        writer.close();
+    }
+
+    public static void debug(Node node) {
+        NodeList children = node.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            Node child = children.item(i);
+            if (child.getNodeType() == Node.TEXT_NODE) {
+                System.out.println("text: ###" + child.getTextContent() + "###");
+            } else {
+                System.out.println("element " + child.getNodeName());
+                debug(child);
+            }
+        }
     }
 }
