@@ -17,41 +17,22 @@ import me.shiwen.evernote.error.EvernoteBackupException;
 import me.shiwen.evernote.model.LocalNote;
 import me.shiwen.evernote.utils.XmlUtils;
 import me.shiwen.evernote.utils.YamlUtils;
-import org.eclipse.jgit.api.Git;
-import org.eclipse.jgit.api.errors.GitAPIException;
-import org.eclipse.jgit.lib.Repository;
-import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
 import org.w3c.dom.Document;
-import org.w3c.dom.Node;
-import org.w3c.dom.NodeList;
-import org.xml.sax.SAXException;
 
-import javax.xml.parsers.ParserConfigurationException;
-import javax.xml.transform.TransformerException;
-import java.io.BufferedWriter;
-import java.io.File;
 import java.io.IOException;
-import java.lang.Character.UnicodeBlock;
-import java.lang.Character.UnicodeScript;
-import java.nio.charset.Charset;
-import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import static com.evernote.edam.userstore.Constants.EDAM_VERSION_MAJOR;
 import static com.evernote.edam.userstore.Constants.EDAM_VERSION_MINOR;
 
-public class EvernoteBackup {
+public class Sync {
     private static final int BATCH_MAX_SIZE = 50;
 
     private ClientFactory factory;
@@ -60,7 +41,7 @@ public class EvernoteBackup {
     private Map<String, String> notebookNameMap = new HashMap<>();
     private Map<String, String> tagNameMap = new HashMap<>();
 
-    public EvernoteBackup(String token) throws EvernoteBackupException {
+    public Sync(String token) throws EvernoteBackupException {
         try {
             factory = new ClientFactory(new EvernoteAuth(EvernoteService.YINXIANG, token));
             UserStoreClient userStore = factory.createUserStoreClient();
@@ -128,6 +109,7 @@ public class EvernoteBackup {
                     for (Note note : notes) {
                         saveNote(note);
                         offset++;
+                        System.out.println(offset + ": " + note.getGuid());
                     }
                     hasMoreNotes = offset < noteList.getTotalNotes();
                 } catch (EDAMSystemException e) {
@@ -155,10 +137,8 @@ public class EvernoteBackup {
 
             List<String> tagGuids = note.getTagGuids();
             if (tagGuids != null) {
-                List<String> tagNames = new ArrayList<>();
-                for (String tagGuid : tagGuids) {
-                    tagNames.add(tagNameMap.get(tagGuid));
-                }
+                List<String> tagNames = tagGuids.stream().map(tagGuid -> tagNameMap.get(tagGuid))
+                        .collect(Collectors.toList());
                 localNote.tags = tagNames.toArray(new String[0]);
             }
 
@@ -166,18 +146,13 @@ public class EvernoteBackup {
             LocalNote oldNote = loadFromFile(guid);
             if (oldNote == null || !localNote.hash.equals(oldNote.hash)) {
                 Note fullNote = noteStore.getNote(guid, true, true, false, false);  // TODO resources
-                localNote.content = XmlUtils.format(fullNote.getContent().replaceAll(">\\s+<", "><"), true)
-                        .replace("\r", "").trim();
-
-                Files.write(Paths.get("debug_content", guid), ("###" + fullNote.getContent() + "###").getBytes());
-                if (fullNote.getContent().contains("\r")) {
-                    Files.write(Paths.get("debug_content_r", guid), ("###" + fullNote.getContent() + "###").getBytes());
-                }
+                Document document = XmlUtils.getDocument(fullNote.getContent());
+                localNote.verbose = XmlUtils.compress(document);
+                localNote.content = XmlUtils.format(document, true).replace("\r", "");
             } else {
+                localNote.verbose = oldNote.verbose;
                 localNote.content = oldNote.content;
             }
-
-            System.out.println(localNote.created);
 
             saveToFile(guid, localNote);
         } catch (EDAMSystemException e) {
@@ -232,9 +207,9 @@ public class EvernoteBackup {
         // TODO implement this
     }
 
-    public static void main(String... args) throws EvernoteBackupException, IOException, GitAPIException, TransformerException, SAXException, ParserConfigurationException {
+    public static void main(String... args) throws Exception {
 
-        //        EvernoteBackup e = new EvernoteBackup("");
+        //        EvernoteBackup e = new EvernoteBackup("S=s1:U=c47099:E=15d69125349:C=15611612390:P=1cd:A=en-devtoken:V=2:H=30e21dff02eca11eba459f34e575cd0e");
         //        e.pullNotes();
 
         //        DirectoryStream<Path> stream = Files.newDirectoryStream(Paths.get("notes"));
@@ -265,41 +240,44 @@ public class EvernoteBackup {
         //        Document document = XmlUtils.getDocument(content);
         //        debug(document);
 
-        Pattern pattern = Pattern.compile("[^\\p{IsHan}\\p{L}\\p{Punct}\\p{L}\n" +
-                " \\p{Nd}\\p{Pc}\\p{InCJK_Symbols_and_Punctuation}\\p{InGeneral_Punctuation}\\s]");
-        //        Pattern pattern = Pattern.compile("\\p{Cf}");
-        DirectoryStream<Path> stream = Files.newDirectoryStream(Paths.get("debug_content"));
-        Set<Character> charSet = new HashSet<>();
-        for (Path path : stream) {
-            if (Files.isDirectory(path)) {
-                continue;
-            }
-            String guid = path.getFileName().toString();
-            System.out.println(guid);
-            String a = new String(Files.readAllBytes(path));
-            //        System.out.println(String.format("\\u%04x", (int)(a.charAt(0))));
-            Matcher m = pattern.matcher(a);
-            while (m.find()) {
-                charSet.add(m.group().charAt(0));
-            }
-        }
-        BufferedWriter writer = Files.newBufferedWriter(Paths.get("charset"), Charset.defaultCharset());
-        for (char c : charSet) {
-            writer.write("->" + c + "<- " + String.format("\\u%04x", (int)c) + "\n");
-        }
-        writer.close();
+//        Pattern pattern = Pattern.compile("[^\\p{IsHan}\\p{L}\\p{Punct}\\p{L}\n" +
+//                " \\p{Nd}\\p{Pc}\\p{InCJK_Symbols_and_Punctuation}\\p{InGeneral_Punctuation}\\s]");
+//        //        Pattern pattern = Pattern.compile("\\p{Cf}");
+//        DirectoryStream<Path> stream = Files.newDirectoryStream(Paths.get("debug_content"));
+//        Set<Character> charSet = new HashSet<>();
+//        for (Path path : stream) {
+//            if (Files.isDirectory(path)) {
+//                continue;
+//            }
+//            String guid = path.getFileName().toString();
+//            System.out.println(guid);
+//            String a = new String(Files.readAllBytes(path));
+//            //        System.out.println(String.format("\\u%04x", (int)(a.charAt(0))));
+//            Matcher m = pattern.matcher(a);
+//            while (m.find()) {
+//                charSet.add(m.group().charAt(0));
+//            }
+//        }
+//        BufferedWriter writer = Files.newBufferedWriter(Paths.get("charset"), Charset.defaultCharset());
+//        for (char c : charSet) {
+//            writer.write("->" + c + "<- " + String.format("\\u%04x", (int)c) + "\n");
+//        }
+//        writer.close();
+
+        Sync e = new Sync("S=s1:U=c47099:E=15df547b72e:C=1569d968a80:P=1cd:A=en-devtoken:V=2:H=e6267dc3de9b3d0a24c27149b54dac0e");
+        e.pullNotes();
     }
 
-    public static void debug(Node node) {
-        NodeList children = node.getChildNodes();
-        for (int i = 0; i < children.getLength(); i++) {
-            Node child = children.item(i);
-            if (child.getNodeType() == Node.TEXT_NODE) {
-                System.out.println("text: ###" + child.getTextContent() + "###");
-            } else {
-                System.out.println("element " + child.getNodeName());
-                debug(child);
-            }
-        }
-    }
+//    public static void debug(Node node) {
+//        NodeList children = node.getChildNodes();
+//        for (int i = 0; i < children.getLength(); i++) {
+//            Node child = children.item(i);
+//            if (child.getNodeType() == Node.TEXT_NODE) {
+//                System.out.println("text: ###" + child.getTextContent() + "###");
+//            } else {
+//                System.out.println("element " + child.getNodeName());
+//                debug(child);
+//            }
+//        }
+//    }
 }

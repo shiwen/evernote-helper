@@ -28,6 +28,7 @@ public class XmlUtils {
     private static final String LOAD_EXTERNAL_DTD = "http://apache.org/xml/features/nonvalidating/load-external-dtd";
     private static final String INDENT_AMOUNT = "{http://xml.apache.org/xslt}indent-amount";
     private static final String YES = "yes";
+    private static final Pattern WHITESPACES_PATTERN = Pattern.compile("\\s+");
 
     private static final DocumentBuilder DOCUMENT_BUILDER;
     private static final Transformer TRANSFORMER;
@@ -61,18 +62,25 @@ public class XmlUtils {
         }
     }
 
-    public static void compress(Document d) {
-        Pattern pattern = Pattern.compile("\\s+");
-        ArrayList<Node> textNodes = new ArrayList<>();
-        getTextNodes(d, textNodes);
+    public static boolean compress(Document d) {
+        ArrayList<Node> textNodes = getTextNodes(d);
+        boolean verbose = false;
         for (Node node : textNodes) {
-            if (pattern.matcher(node.getTextContent()).matches()) {
+            if (WHITESPACES_PATTERN.matcher(node.getTextContent()).matches()) {
                 node.getParentNode().removeChild(node);
+                verbose = true;
             }
         }
+        return verbose;
     }
 
-    public static void getTextNodes(Node node, ArrayList<Node> nodeList) {
+    private static ArrayList<Node> getTextNodes(Node node) {
+        ArrayList<Node> textNodes = new ArrayList<>();
+        getTextNodes(node, textNodes);
+        return textNodes;
+    }
+
+    private static void getTextNodes(Node node, ArrayList<Node> nodeList) {
         NodeList children = node.getChildNodes();
         for (int i = 0; i < children.getLength(); i++) {
             Node child = children.item(i);
@@ -84,7 +92,7 @@ public class XmlUtils {
         }
     }
 
-    public static void flatten(Node node) {
+    private static void flatten(Node node) {
         Node parentNode = node.getParentNode();
         Document doc = node.getOwnerDocument();
         if (node.hasChildNodes()) {

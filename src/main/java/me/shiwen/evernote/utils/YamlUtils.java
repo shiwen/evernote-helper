@@ -39,4 +39,22 @@ public class YamlUtils {
     public static LocalNote load(String yaml) throws IOException {
         return READER.readValue(yaml);
     }
+
+    public static void main(String... args) throws IOException {
+        String s = "title: null\n" +
+                "notebook: null\n" +
+                "created: null\n" +
+                "updated: null\n" +
+                "version: 0\n" +
+                "hash: null\n" +
+                "reference: null\n" +
+                "tags: null\n" +
+                "content: test_content\n" +
+                "line-wrap: true";
+        LocalNote note = load(s);
+        System.out.println(note.verbose);
+
+//        LocalNote note = new LocalNote();
+//        System.out.println(dump(note));
+    }
 }

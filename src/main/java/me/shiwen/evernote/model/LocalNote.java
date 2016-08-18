@@ -1,5 +1,7 @@
 package me.shiwen.evernote.model;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
@@ -25,4 +27,7 @@ public class LocalNote {
     public String[] tags;
     @JsonProperty("content")
     public String content;
+    @JsonProperty("verbose")
+    @JsonInclude(Include.NON_DEFAULT)
+    public boolean verbose;
 }
