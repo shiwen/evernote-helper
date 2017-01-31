@@ -24,14 +24,13 @@ import org.w3c.dom.Document;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static com.evernote.edam.userstore.Constants.EDAM_VERSION_MAJOR;
 import static com.evernote.edam.userstore.Constants.EDAM_VERSION_MINOR;
@@ -92,7 +91,7 @@ public class Sync {
         }
     }
 
-    public void pullNotes() throws EvernoteBackupException {
+    public void pullNotes(Git git) throws EvernoteBackupException {
         try {
             if (!initialized) {
                 init();
@@ -104,6 +103,7 @@ public class Sync {
 
             int offset = 0;
             boolean hasMoreNotes;
+            List<String> guidList = new ArrayList<String>();
             do {
                 try {
                     NoteList noteList = noteStore.findNotes(filter, offset, BATCH_MAX_SIZE);
@@ -112,6 +112,7 @@ public class Sync {
                         break;
                     }
                     for (Note note : notes) {
+                        guidList.add(note.getGuid());
                         saveNote(note);
                         offset++;
                         System.out.println(offset + ": " + note.getGuid());
@@ -122,6 +123,21 @@ public class Sync {
                     hasMoreNotes = true;
                 }
             } while (hasMoreNotes);
+
+            // remove deleted notes from repository
+//            Stream<Path> stream = Files.list(Paths.get(BASE_DIR));
+//            for (Path entry: stream) {
+//                result.add(entry);
+//            }
+            List<String> repositoryFiles = Files.list(Paths.get(BASE_DIR))
+                    .map(path -> path.getFileName().toString())
+                    .collect(Collectors.toList());
+            for (String file : repositoryFiles) {
+                if (!guidList.contains(file)) {
+                    Files.delete(Paths.get(BASE_DIR, file));
+                    git.rm().addFilepattern(file).call();
+                }
+            }
         } catch (EvernoteBackupException e) {
             throw e;
         } catch (Exception e) {
@@ -270,14 +286,15 @@ public class Sync {
 //        }
 //        writer.close();
 
-        Sync e = new Sync("");
-        e.pullNotes();
-
         FileRepositoryBuilder repositoryBuilder = new FileRepositoryBuilder();
         repositoryBuilder.setMustExist(true);
         repositoryBuilder.setGitDir(new File(BASE_DIR, ".git"));
         Repository repository = repositoryBuilder.build();
         Git git = new Git(repository);
+
+        Sync e = new Sync("");
+        e.pullNotes(git);
+
         git.add().addFilepattern(".").call();
         git.commit().setMessage("Snapshot").call();
     }
