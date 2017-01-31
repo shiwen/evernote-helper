@@ -17,8 +17,12 @@ import me.shiwen.evernote.error.EvernoteBackupException;
 import me.shiwen.evernote.model.LocalNote;
 import me.shiwen.evernote.utils.XmlUtils;
 import me.shiwen.evernote.utils.YamlUtils;
+import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.lib.Repository;
+import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
 import org.w3c.dom.Document;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -33,6 +37,7 @@ import static com.evernote.edam.userstore.Constants.EDAM_VERSION_MAJOR;
 import static com.evernote.edam.userstore.Constants.EDAM_VERSION_MINOR;
 
 public class Sync {
+    private static final String BASE_DIR = "notes";
     private static final int BATCH_MAX_SIZE = 50;
 
     private ClientFactory factory;
@@ -200,7 +205,7 @@ public class Sync {
     }
 
     private Path getPath(String guid) {
-        return Paths.get("notes", guid);
+        return Paths.get(BASE_DIR, guid);
     }
 
     public void removeUnusedTags() {
@@ -209,37 +214,38 @@ public class Sync {
 
     public static void main(String... args) throws Exception {
 
-        //        EvernoteBackup e = new EvernoteBackup("S=s1:U=c47099:E=15d69125349:C=15611612390:P=1cd:A=en-devtoken:V=2:H=30e21dff02eca11eba459f34e575cd0e");
-        //        e.pullNotes();
+//        // check whether whitespaces in the original content affects the reformatted content
+//        DirectoryStream<Path> stream = Files.newDirectoryStream(Paths.get(BASE_DIR));
+//        for (Path path : stream) {
+//            if (Files.isDirectory(path)) {
+//                continue;
+//            }
+//            String guid = path.getFileName().toString();
+//            System.out.println(guid);
+//            LocalNote note = YamlUtils.load(new String(Files.readAllBytes(path)));
+//            String content = new String(Files.readAllBytes(Paths.get("debug_content", guid)));
+//            content = content.substring(3, content.length() - 3);
+//            content = content.replaceAll(">\\s+<", "><");
+//            note.content = XmlUtils.format(content, true).trim();
+//            Files.write(path, YamlUtils.dump(note).getBytes());
+//        }
+//        stream.close();
 
-        //        DirectoryStream<Path> stream = Files.newDirectoryStream(Paths.get("notes"));
-        //        for (Path path : stream) {
-        //            if (Files.isDirectory(path)) {
-        //                continue;
-        //            }
-        //            String guid = path.getFileName().toString();
-        //            System.out.println(guid);
-        //            LocalNote note = YamlUtils.load(new String(Files.readAllBytes(path)));
-        //            String content = new String(Files.readAllBytes(Paths.get("debug_content", guid)));
-        //            content = content.substring(3, content.length() - 3);
-        //            content = content.replaceAll(">\\s+<", "><");
-        //            note.content = XmlUtils.format(content, true).trim();
-        //            Files.write(path, YamlUtils.dump(note).getBytes());
-        //        }
-        //        stream.close();
+//        // git commit
+//        FileRepositoryBuilder repositoryBuilder = new FileRepositoryBuilder();
+//        repositoryBuilder.setMustExist(true);
+//        repositoryBuilder.setGitDir(new File(BASE_DIR, ".git"));
+//        Repository repository = repositoryBuilder.build();
+//        Git git = new Git(repository);
+//        git.add().addFilepattern(".").call();
+//        git.commit().setMessage("The big bang!").call();
 
-        //        FileRepositoryBuilder repositoryBuilder = new FileRepositoryBuilder();
-        //        repositoryBuilder.setMustExist(true);
-        //        repositoryBuilder.setGitDir(new File("notes", ".git"));
-        //        Repository repository = repositoryBuilder.build();
-        //        Git git = new Git(repository);
-        //        git.add().addFilepattern(".").call();
-        //        git.commit().setMessage("The big bang!").call();
+//        // some kind of debug
+//        String content = new String(Files.readAllBytes(Paths.get("/home/shiwen/tt")));
+//        Document document = XmlUtils.getDocument(content);
+//        debug(document);
 
-        //        String content = new String(Files.readAllBytes(Paths.get("/home/shiwen/tt")));
-        //        Document document = XmlUtils.getDocument(content);
-        //        debug(document);
-
+//        // check what strange characters are in the notes
 //        Pattern pattern = Pattern.compile("[^\\p{IsHan}\\p{L}\\p{Punct}\\p{L}\n" +
 //                " \\p{Nd}\\p{Pc}\\p{InCJK_Symbols_and_Punctuation}\\p{InGeneral_Punctuation}\\s]");
 //        //        Pattern pattern = Pattern.compile("\\p{Cf}");
@@ -264,8 +270,16 @@ public class Sync {
 //        }
 //        writer.close();
 
-        Sync e = new Sync("S=s1:U=c47099:E=15df547b72e:C=1569d968a80:P=1cd:A=en-devtoken:V=2:H=e6267dc3de9b3d0a24c27149b54dac0e");
+        Sync e = new Sync("");
         e.pullNotes();
+
+        FileRepositoryBuilder repositoryBuilder = new FileRepositoryBuilder();
+        repositoryBuilder.setMustExist(true);
+        repositoryBuilder.setGitDir(new File(BASE_DIR, ".git"));
+        Repository repository = repositoryBuilder.build();
+        Git git = new Git(repository);
+        git.add().addFilepattern(".").call();
+        git.commit().setMessage("Snapshot").call();
     }
 
 //    public static void debug(Node node) {
