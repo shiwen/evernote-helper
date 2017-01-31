@@ -130,6 +130,7 @@ public class Sync {
 //                result.add(entry);
 //            }
             List<String> repositoryFiles = Files.list(Paths.get(BASE_DIR))
+                    .filter(Files::isRegularFile)
                     .map(path -> path.getFileName().toString())
                     .collect(Collectors.toList());
             for (String file : repositoryFiles) {
