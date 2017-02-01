@@ -133,14 +133,14 @@ public class Sync {
         }
     }
 
-    public boolean syncNotes(List<Note> notes) throws EvernoteBackupException {
+    public boolean syncNotes(List<Note> notes, Git git) throws EvernoteBackupException {
         if (!initialized) {
             init();  // TODO what if init failed?
         }
 
         boolean needCommit = false;
         for (Note note : notes) {
-            boolean modified = syncNote(note);
+            boolean modified = syncNote(note, git);
             if (modified) {
                 needCommit = true;
             }
@@ -148,7 +148,7 @@ public class Sync {
         return needCommit;
     }
 
-    public boolean syncNote(Note note) throws EvernoteBackupException {
+    public boolean syncNote(Note note, Git git) throws EvernoteBackupException {
         try {
             LocalNote localNote = new LocalNote();
             localNote.title = note.getTitle();
@@ -180,13 +180,14 @@ public class Sync {
 
             if (!localNote.equals(oldNote)) {
                 saveToFile(guid, localNote);
+                git.add().addFilepattern(guid).call();
                 return true;
             } else {
                 return false;
             }
         } catch (EDAMSystemException e) {
             processException(e);
-            return syncNote(note);
+            return syncNote(note, git);
         } catch (Exception e) {
             throw new EvernoteBackupException(e);
         }
@@ -421,21 +422,18 @@ public class Sync {
 //        Sync e = new Sync("");
 //        e.pullNotes(git);
 
-        git.add().addFilepattern(".").call();
-        git.commit().setMessage("Snapshot").call();
-
         // 1. list all remote notes
         Sync e = new Sync("");
         List<Note> notes = e.listNotes();
 
         // 2. sync all remote notes
-        boolean needCommit = e.syncNotes(notes);
+        boolean notesAdded = e.syncNotes(notes, git);
 
         // 3. delete notes that do not exist in remote repository
-        needCommit &= e.removeObsoleteNotes(notes, git);
+        boolean notesDeleted = e.removeObsoleteNotes(notes, git);
 
         // 4. commit changes to git
-        if (needCommit) {
+        if (notesAdded || notesDeleted) {
             git.commit().setMessage("Snapshot").call();
         }
     }

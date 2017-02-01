@@ -7,6 +7,7 @@ import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
 import java.util.Arrays;
 import java.util.Date;
+import java.util.Objects;
 
 @JsonPropertyOrder({"title", "notebook", "created", "updated", "version",
         "hash", "reference", "tags", "content", "verbose"})
@@ -44,15 +45,15 @@ public class LocalNote {
         }
 
         LocalNote note = (LocalNote) o;
-        return this.title.equals(note.title) &&
-                this.notebook.equals(note.notebook) &&
-                this.created.equals(note.created) &&
-                this.updated.equals(note.updated) &&
+        return Objects.equals(this.title, note.title) &&
+                Objects.equals(this.notebook, note.notebook) &&
+                Objects.equals(this.created, note.created) &&
+                Objects.equals(this.updated, note.updated) &&
                 this.version == note.version &&
-                this.hash.equals(note.hash) &&
-                this.reference.equals(note.reference) &&
+                Objects.equals(this.hash, note.hash) &&
+                Objects.equals(this.reference, note.reference) &&
                 Arrays.equals(this.tags, note.tags) &&
-                this.content.equals(note.content) &&
+                Objects.equals(this.content, note.content) &&
                 this.verbose == note.verbose;
     }
 }
