@@ -18,6 +18,8 @@ import me.shiwen.evernote.model.LocalNote;
 import me.shiwen.evernote.utils.XmlUtils;
 import me.shiwen.evernote.utils.YamlUtils;
 import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.api.errors.GitAPIException;
+import org.eclipse.jgit.api.errors.NoFilepatternException;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
 import org.w3c.dom.Document;
@@ -91,19 +93,20 @@ public class Sync {
         }
     }
 
-    public void pullNotes(Git git) throws EvernoteBackupException {
+    public List<Note> listNotes() throws EvernoteBackupException {
         try {
             if (!initialized) {
-                init();
+                init();  // TODO do not need to init
             }
+
+            List<Note> allNotes = new ArrayList<>();
 
             NoteFilter filter = new NoteFilter();
             filter.setOrder(NoteSortOrder.CREATED.getValue());
             filter.setAscending(true);
 
             int offset = 0;
-            boolean hasMoreNotes;
-            List<String> guidList = new ArrayList<String>();
+            boolean hasMoreNotes = true;
             do {
                 try {
                     NoteList noteList = noteStore.findNotes(filter, offset, BATCH_MAX_SIZE);
@@ -112,39 +115,137 @@ public class Sync {
                         break;
                     }
                     for (Note note : notes) {
-                        guidList.add(note.getGuid());
-                        saveNote(note);
+                        allNotes.add(note);
                         offset++;
-                        System.out.println(offset + ": " + note.getGuid());
+                        System.out.println(offset + ": " + note.getGuid());  // TODO log (level debug)
                     }
                     hasMoreNotes = offset < noteList.getTotalNotes();
                 } catch (EDAMSystemException e) {
                     processException(e);
-                    hasMoreNotes = true;
                 }
             } while (hasMoreNotes);
 
-            // remove deleted notes from repository
-//            Stream<Path> stream = Files.list(Paths.get(BASE_DIR));
-//            for (Path entry: stream) {
-//                result.add(entry);
-//            }
-            List<String> repositoryFiles = Files.list(Paths.get(BASE_DIR))
-                    .filter(Files::isRegularFile)
-                    .map(path -> path.getFileName().toString())
-                    .collect(Collectors.toList());
-            for (String file : repositoryFiles) {
-                if (!guidList.contains(file)) {
-                    Files.delete(Paths.get(BASE_DIR, file));
-                    git.rm().addFilepattern(file).call();
-                }
-            }
+            return allNotes;
         } catch (EvernoteBackupException e) {
             throw e;
         } catch (Exception e) {
             throw new EvernoteBackupException(e);
         }
     }
+
+    public boolean syncNotes(List<Note> notes) throws EvernoteBackupException {
+        if (!initialized) {
+            init();  // TODO what if init failed?
+        }
+
+        boolean needCommit = false;
+        for (Note note : notes) {
+            boolean modified = syncNote(note);
+            if (modified) {
+                needCommit = true;
+            }
+        }
+        return needCommit;
+    }
+
+    public boolean syncNote(Note note) throws EvernoteBackupException {
+        try {
+            LocalNote localNote = new LocalNote();
+            localNote.title = note.getTitle();
+            localNote.notebook = notebookNameMap.get(note.getNotebookGuid());
+            localNote.created = new Date(note.getCreated());
+            localNote.updated = new Date(note.getUpdated());
+            localNote.version = note.getUpdateSequenceNum();
+            localNote.hash = hexString(note.getContentHash());
+            localNote.reference = note.getAttributes().getSourceURL();
+
+            List<String> tagGuids = note.getTagGuids();
+            if (tagGuids != null) {
+                List<String> tagNames = tagGuids.stream().map(tagGuid -> tagNameMap.get(tagGuid))
+                        .collect(Collectors.toList());
+                localNote.tags = tagNames.toArray(new String[0]);
+            }
+
+            String guid = note.getGuid();
+            LocalNote oldNote = loadFromFile(guid);
+            if (oldNote == null || !localNote.hash.equals(oldNote.hash)) {
+                Note fullNote = noteStore.getNote(guid, true, true, false, false);  // TODO resources
+                Document document = XmlUtils.getDocument(fullNote.getContent());
+                localNote.verbose = XmlUtils.compress(document);
+                localNote.content = XmlUtils.format(document, true).replace("\r", "");
+            } else {
+                localNote.verbose = oldNote.verbose;
+                localNote.content = oldNote.content;
+            }
+
+            if (!localNote.equals(oldNote)) {
+                saveToFile(guid, localNote);
+                return true;
+            } else {
+                return false;
+            }
+        } catch (EDAMSystemException e) {
+            processException(e);
+            return syncNote(note);
+        } catch (Exception e) {
+            throw new EvernoteBackupException(e);
+        }
+    }
+
+//    public void pullNotes(Git git) throws EvernoteBackupException {
+//        try {
+//            if (!initialized) {
+//                init();
+//            }
+//
+//            NoteFilter filter = new NoteFilter();
+//            filter.setOrder(NoteSortOrder.CREATED.getValue());
+//            filter.setAscending(true);
+//
+//            int offset = 0;
+//            boolean hasMoreNotes;
+//            List<String> guidList = new ArrayList<String>();
+//            do {
+//                try {
+//                    NoteList noteList = noteStore.findNotes(filter, offset, BATCH_MAX_SIZE);
+//                    List<Note> notes = noteList.getNotes();
+//                    if (notes == null) {
+//                        break;
+//                    }
+//                    for (Note note : notes) {
+//                        guidList.add(note.getGuid());
+//                        saveNote(note);
+//                        offset++;
+//                        System.out.println(offset + ": " + note.getGuid());
+//                    }
+//                    hasMoreNotes = offset < noteList.getTotalNotes();
+//                } catch (EDAMSystemException e) {
+//                    processException(e);
+//                    hasMoreNotes = true;
+//                }
+//            } while (hasMoreNotes);
+//
+//            // remove deleted notes from repository
+////            Stream<Path> stream = Files.list(Paths.get(BASE_DIR));
+////            for (Path entry: stream) {
+////                result.add(entry);
+////            }
+//            List<String> repositoryFiles = Files.list(Paths.get(BASE_DIR))
+//                    .filter(Files::isRegularFile)
+//                    .map(path -> path.getFileName().toString())
+//                    .collect(Collectors.toList());
+//            for (String file : repositoryFiles) {
+//                if (!guidList.contains(file)) {
+//                    Files.delete(Paths.get(BASE_DIR, file));
+//                    git.rm().addFilepattern(file).call();
+//                }
+//            }
+//        } catch (EvernoteBackupException e) {
+//            throw e;
+//        } catch (Exception e) {
+//            throw new EvernoteBackupException(e);
+//        }
+//    }
 
     private void saveNote(Note note) throws EDAMSystemException, EvernoteBackupException {
         try {
@@ -181,6 +282,30 @@ public class Sync {
             throw e;
         } catch (Exception e) {
             throw new EvernoteBackupException(e);
+        }
+    }
+
+    public boolean removeObsoleteNotes(List<Note> notes, Git git) throws IOException, GitAPIException {
+        List<String> guids = notes.stream().map(Note::getGuid).collect(Collectors.toList());
+        List<String> files = null;
+        try {
+            files = Files.list(Paths.get(BASE_DIR))
+                    .filter(Files::isRegularFile)
+                    .map(path -> path.getFileName().toString())
+                    .collect(Collectors.toList());
+
+            boolean needCommit = false;
+            for (String file : files) {
+                if (!guids.contains(file)) {
+                    Files.delete(Paths.get(BASE_DIR, file));
+                    git.rm().addFilepattern(file).call();
+                    needCommit = true;
+                }
+            }
+            return needCommit;
+        } catch (IOException | GitAPIException e) {
+            e.printStackTrace();
+            throw e;
         }
     }
 
@@ -293,11 +418,26 @@ public class Sync {
         Repository repository = repositoryBuilder.build();
         Git git = new Git(repository);
 
-        Sync e = new Sync("");
-        e.pullNotes(git);
+//        Sync e = new Sync("");
+//        e.pullNotes(git);
 
         git.add().addFilepattern(".").call();
         git.commit().setMessage("Snapshot").call();
+
+        // 1. list all remote notes
+        Sync e = new Sync("");
+        List<Note> notes = e.listNotes();
+
+        // 2. sync all remote notes
+        boolean needCommit = e.syncNotes(notes);
+
+        // 3. delete notes that do not exist in remote repository
+        needCommit &= e.removeObsoleteNotes(notes, git);
+
+        // 4. commit changes to git
+        if (needCommit) {
+            git.commit().setMessage("Snapshot").call();
+        }
     }
 
 //    public static void debug(Node node) {
